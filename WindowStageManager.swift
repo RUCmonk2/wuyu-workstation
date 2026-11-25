@@ -58,18 +58,50 @@ enum StageLayout: Equatable, Hashable, Sendable {
     }
 }
 
+struct StageBarMetrics: Equatable, Sendable {
+    let horizontalHeight: CGFloat
+    let verticalWidth: CGFloat
+    let verticalHeight: CGFloat
+    let uiScale: CGFloat
+
+    static func forScreen(_ screen: NSScreen?) -> StageBarMetrics {
+        let visible = (screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        // Adapt width/height gracefully from 13" MacBook (~1280-1470pt) up to 1080p/2K/4K monitors (1920-2560pt+)
+        let vWidth = min(92, max(66, floor(visible.width * 0.044)))
+        let hHeight = min(54, max(44, floor(visible.height * 0.046)))
+        let uiScale = min(1.32, max(0.96, vWidth / 66.0))
+        // Keep vertical dock tightly proportioned around its scaled controls (never leaving a giant hollow middle gap)
+        let idealVerticalHeight = round(560 * uiScale)
+        let maxAllowedHeight = max(460, visible.height - 20)
+        let vHeight = min(maxAllowedHeight, max(480, idealVerticalHeight))
+        return StageBarMetrics(
+            horizontalHeight: hHeight,
+            verticalWidth: vWidth,
+            verticalHeight: vHeight,
+            uiScale: uiScale
+        )
+    }
+}
+
 @MainActor
 final class WindowStageManager: ObservableObject {
-    static let horizontalBarHeight: CGFloat = 46
-    static let verticalBarWidth: CGFloat = 64
     static let barMargin: CGFloat = 6
     static let windowGap: CGFloat = 6
 
     @Published var isAccessibilityTrusted: Bool = AXIsProcessTrusted()
     @Published var activeLayout: StageLayout?
     @Published var runningClients: Set<Client> = []
+    @Published var barMetrics: StageBarMetrics = StageBarMetrics.forScreen(NSScreen.main)
 
     private var trustPollTask: Task<Void, Never>?
+
+    func updateMetrics(for screen: NSScreen? = nil) {
+        let updated = StageBarMetrics.forScreen(screen ?? NSScreen.main ?? NSScreen.screens.first)
+        if updated != barMetrics {
+            barMetrics = updated
+        }
+    }
 
     func startMonitoringTrust(onBecomeTrusted: @escaping @MainActor () -> Void) {
         refreshStatus()
@@ -113,46 +145,47 @@ final class WindowStageManager: ObservableObject {
 
     func stageBarFrame(edge: StageBarEdge, on screen: NSScreen? = nil) -> CGRect {
         let targetScreen = screen ?? NSScreen.main ?? NSScreen.screens.first
+        let metrics = StageBarMetrics.forScreen(targetScreen)
+        barMetrics = metrics
         guard let visible = targetScreen?.visibleFrame else {
-            return CGRect(x: 8, y: 800, width: 1200, height: Self.horizontalBarHeight)
+            return CGRect(x: 8, y: 800, width: 1200, height: metrics.horizontalHeight)
         }
         let m = Self.barMargin
         switch edge {
         case .top:
             return CGRect(
                 x: visible.minX + m,
-                y: visible.maxY - Self.horizontalBarHeight - m,
+                y: visible.maxY - metrics.horizontalHeight - m,
                 width: max(760, visible.width - m * 2),
-                height: Self.horizontalBarHeight
+                height: metrics.horizontalHeight
             )
         case .bottom:
             return CGRect(
                 x: visible.minX + m,
                 y: visible.minY + m,
                 width: max(760, visible.width - m * 2),
-                height: Self.horizontalBarHeight
+                height: metrics.horizontalHeight
             )
         case .left:
-            let h = min(visible.height - m * 2, 610)
             return CGRect(
                 x: visible.minX + m,
-                y: visible.midY - h / 2,
-                width: Self.verticalBarWidth,
-                height: max(460, h)
+                y: visible.midY - metrics.verticalHeight / 2,
+                width: metrics.verticalWidth,
+                height: metrics.verticalHeight
             )
         case .right:
-            let h = min(visible.height - m * 2, 610)
             return CGRect(
-                x: visible.maxX - Self.verticalBarWidth - m,
-                y: visible.midY - h / 2,
-                width: Self.verticalBarWidth,
-                height: max(460, h)
+                x: visible.maxX - metrics.verticalWidth - m,
+                y: visible.midY - metrics.verticalHeight / 2,
+                width: metrics.verticalWidth,
+                height: metrics.verticalHeight
             )
         }
     }
 
     func stageCanvasFrame(edge: StageBarEdge = .top, on screen: NSScreen? = nil, reserveBar: Bool = true) -> CGRect {
         let targetScreen = screen ?? NSScreen.main ?? NSScreen.screens.first
+        let metrics = StageBarMetrics.forScreen(targetScreen)
         guard let visible = targetScreen?.visibleFrame else {
             return CGRect(x: 0, y: 0, width: 1440, height: 840)
         }
@@ -164,10 +197,10 @@ final class WindowStageManager: ObservableObject {
 
         if reserveBar {
             switch edge {
-            case .top: topInset = Self.horizontalBarHeight + m * 2
-            case .bottom: bottomInset = Self.horizontalBarHeight + m * 2
-            case .left: leftInset = Self.verticalBarWidth + m * 2
-            case .right: rightInset = Self.verticalBarWidth + m * 2
+            case .top: topInset = metrics.horizontalHeight + m * 2
+            case .bottom: bottomInset = metrics.horizontalHeight + m * 2
+            case .left: leftInset = metrics.verticalWidth + m * 2
+            case .right: rightInset = metrics.verticalWidth + m * 2
             }
         }
 

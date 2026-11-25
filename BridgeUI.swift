@@ -58,6 +58,9 @@ final class WorkstationModel: ObservableObject {
     var onRaiseStageBar: (() -> Void)?
     var onStageBarEdgeChanged: ((StageBarEdge) -> Void)?
     var onUpdateBadge: ((Int) -> Void)?
+    var activeScreenProvider: (() -> NSScreen?)?
+
+    private var activeScreen: NSScreen? { activeScreenProvider?() ?? NSScreen.main }
 
     private var watcher: MailboxWatcher?
     private var knownPacketIDs: Set<UUID> = []
@@ -239,7 +242,7 @@ final class WorkstationModel: ObservableObject {
         """
         guard copy(prompt) else { return }
         onHideMainWindow?()
-        stageManager.focusSingle(.antigravity, edge: stageBarEdge, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
+        stageManager.focusSingle(.antigravity, edge: stageBarEdge, on: activeScreen, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
             self?.onRaiseStageBar?()
         }) { [weak self] msg, isErr in
             self?.report(isErr ? msg : "已复制全自动 /wuyu-flow 指令并切到 Antigravity，粘贴回车后即可全程零传声筒并在工作台看实时直播。", isError: isErr)
@@ -265,14 +268,14 @@ final class WorkstationModel: ObservableObject {
 
         onHideMainWindow?()
         if splitWithSender && sender != target {
-            stageManager.applySplitTwo(sender, target, ratio: 0.50, edge: stageBarEdge, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
+            stageManager.applySplitTwo(sender, target, ratio: 0.50, edge: stageBarEdge, on: activeScreen, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
                 self?.onRaiseStageBar?()
             }) { [weak self] msg, isErr in
                 self?.report(isErr ? msg : "已复制\(copiedDescription)，\(msg)", isError: isErr)
                 self?.showBanner(isErr ? msg : "已复制\(copiedDescription) → \(sender.shortLabel) | \(target.shortLabel)")
             }
         } else {
-            stageManager.focusSingle(target, edge: stageBarEdge, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
+            stageManager.focusSingle(target, edge: stageBarEdge, on: activeScreen, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
                 self?.onRaiseStageBar?()
             }) { [weak self] msg, isErr in
                 self?.report(isErr ? msg : "已复制\(copiedDescription)，\(msg)", isError: isErr)
@@ -283,7 +286,7 @@ final class WorkstationModel: ObservableObject {
 
     func focusTab(_ client: Client) {
         onHideMainWindow?()
-        stageManager.focusSingle(client, edge: stageBarEdge, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
+        stageManager.focusSingle(client, edge: stageBarEdge, on: activeScreen, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
             self?.onRaiseStageBar?()
         }) { [weak self] msg, isErr in
             self?.report(msg, isError: isErr)
@@ -296,7 +299,7 @@ final class WorkstationModel: ObservableObject {
             stageManager.requestAccessibilityPermission()
         }
         onHideMainWindow?()
-        stageManager.applySplitTwo(left, right, ratio: ratio, edge: stageBarEdge, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
+        stageManager.applySplitTwo(left, right, ratio: ratio, edge: stageBarEdge, on: activeScreen, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
             self?.onRaiseStageBar?()
         }) { [weak self] msg, isErr in
             self?.report(msg, isError: isErr)
@@ -309,7 +312,7 @@ final class WorkstationModel: ObservableObject {
             stageManager.requestAccessibilityPermission()
         }
         onHideMainWindow?()
-        stageManager.applySplitThree(primary, topRight, bottomRight, edge: stageBarEdge, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
+        stageManager.applySplitThree(primary, topRight, bottomRight, edge: stageBarEdge, on: activeScreen, reserveBar: isStageBarVisible, afterPlace: { [weak self] in
             self?.onRaiseStageBar?()
         }) { [weak self] msg, isErr in
             self?.report(msg, isError: isErr)
@@ -394,6 +397,11 @@ private struct StageBarView: View {
 
     private var palette: WorkstationPalette { themeStore.palette(for: scheme) }
     private var isVertical: Bool { model.stageBarEdge.isVertical }
+    private var s: CGFloat { stage.barMetrics.uiScale }
+    private var vTileW: CGFloat { max(50, floor(stage.barMetrics.verticalWidth - 16)) }
+    private var vTileH: CGFloat { max(44, floor(46 * s)) }
+    private var vBtnW: CGFloat { max(40, floor(stage.barMetrics.verticalWidth - 22)) }
+    private var vBtnH: CGFloat { max(30, floor(30 * s)) }
 
     var body: some View {
         Group {
@@ -562,19 +570,19 @@ private struct StageBarView: View {
         .padding(.horizontal, 10)
     }
 
-    // MARK: Vertical Mac Dock Rail (Left / Right)
+    // MARK: Vertical Mac Dock Rail (Left / Right — Screen-Size Adaptive)
 
     private var verticalRail: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: max(6, round(8 * s))) {
             Button { model.onToggleMainWindow?() } label: {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 32, height: 32)
+                    .frame(width: round(34 * s), height: round(34 * s))
                     .padding(5)
                     .background(
                         model.isMainWindowVisible ? palette.accentWash : .clear,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                     )
                     .scaleEffect(hoveredUtility == "brand" ? 1.07 : 1.0)
             }
@@ -584,29 +592,29 @@ private struct StageBarView: View {
 
             barDividerVertical
 
-            VStack(spacing: 5) {
+            VStack(spacing: max(5, round(6 * s))) {
                 ForEach(Client.allCases) { client in verticalClientTab(client) }
             }
 
             barDividerVertical
 
             // Quick Split Controls in vertical mode
-            VStack(spacing: 5) {
+            VStack(spacing: max(5, round(6 * s))) {
                 Button { model.applySplit(.codex, .antigravity, ratio: 0.50) } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         Image(systemName: "rectangle.split.2x1")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: round(14 * s), weight: .medium))
                         Text("双拼")
-                            .font(.system(size: 9.5, weight: .medium))
+                            .font(.system(size: round(10 * s), weight: .medium))
                     }
                     .foregroundStyle(stage.activeLayout == .splitTwo(.codex, .antigravity, 0.50) ? palette.accent : palette.muted)
-                    .frame(width: 46, height: 38)
+                    .frame(width: vTileW, height: max(40, round(40 * s)))
                     .background(
-                        stage.activeLayout == .splitTwo(.codex, .antigravity, 0.50) ? palette.accentWash : palette.surface.opacity(0.65),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        stage.activeLayout == .splitTwo(.codex, .antigravity, 0.50) ? palette.accentWash : palette.surface.opacity(0.68),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
                             .strokeBorder(stage.activeLayout == .splitTwo(.codex, .antigravity, 0.50) ? palette.accent.opacity(0.55) : palette.line)
                     }
                 }
@@ -622,17 +630,17 @@ private struct StageBarView: View {
                     model.selectedThreadID = active.id
                     model.onShowMainWindow?()
                 } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         Circle()
                             .fill(palette.clientColor(active.waitingFor))
-                            .frame(width: 8, height: 8)
+                            .frame(width: round(8 * s), height: round(8 * s))
                         Text("待办")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.system(size: round(10 * s), weight: .semibold))
                             .foregroundStyle(palette.ink)
                     }
-                    .frame(width: 46, height: 34)
-                    .background(palette.surface.opacity(0.8), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .overlay { RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(palette.line) }
+                    .frame(width: vTileW, height: max(36, round(36 * s)))
+                    .background(palette.surface.opacity(0.82), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.line) }
                 }
                 .buttonStyle(.plain)
                 .help("当前待办：\(active.subject)")
@@ -643,16 +651,18 @@ private struct StageBarView: View {
             if !stage.isAccessibilityTrusted {
                 Button { stage.requestAccessibilityPermission() } label: {
                     Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 13))
+                        .font(.system(size: round(13 * s)))
                         .foregroundStyle(palette.warning)
-                        .frame(width: 34, height: 30)
-                        .background(palette.warningWash, in: RoundedRectangle(cornerRadius: 8))
+                        .frame(width: vBtnW, height: vBtnH)
+                        .background(palette.warningWash, in: RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(.plain)
                 .help("点击打开系统设置授权分屏权限")
             }
 
-            VStack(spacing: 5) {
+            barDividerVertical
+
+            VStack(spacing: max(5, round(6 * s))) {
                 newWorkflowIconButton
                 themeQuickMenu
                 dockEdgeMenu
@@ -660,7 +670,7 @@ private struct StageBarView: View {
                 collapseBarIconButton
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, round(12 * s))
         .padding(.horizontal, 6)
     }
 
@@ -724,44 +734,44 @@ private struct StageBarView: View {
 
         return Button { model.focusTab(client) } label: {
             ZStack(alignment: .topTrailing) {
-                VStack(spacing: 3) {
-                    ClientGlyph(client: client, size: 16)
+                VStack(spacing: 4) {
+                    ClientGlyph(client: client, size: round(17 * s))
                         .foregroundStyle(isActive || isInSplit || hovered ? palette.clientColor(client) : palette.muted)
                     Text(client.shortLabel)
-                        .font(.system(size: 9.5, weight: isActive ? .semibold : .medium))
+                        .font(.system(size: round(10 * s), weight: isActive ? .semibold : .medium))
                         .foregroundStyle(isActive || hovered ? palette.ink : palette.muted)
                         .lineLimit(1)
                 }
-                .frame(width: 46, height: 42)
+                .frame(width: vTileW, height: vTileH)
                 .background {
                     if isActive {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(palette.clientWash(client))
                             .overlay {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .strokeBorder(palette.clientColor(client).opacity(0.65), lineWidth: 1.1)
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(palette.clientColor(client).opacity(0.65), lineWidth: 1.15)
                             }
                             .matchedGeometryEffect(id: "activeClientTab", in: tabNamespace)
                     } else if isInSplit || hovered {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(palette.hover.opacity(isInSplit ? 0.80 : 0.58))
                     }
                 }
 
                 if waiting > 0 {
                     Text("\(waiting)")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(.system(size: round(8.5 * s), weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
+                        .padding(.horizontal, 4.5)
+                        .padding(.vertical, 1.5)
                         .background(palette.clientColor(client), in: Capsule())
                         .offset(x: 3, y: -3)
                 } else if running {
                     Circle()
                         .fill(palette.success)
-                        .frame(width: 5.5, height: 5.5)
-                        .offset(x: -4, y: 4)
+                        .frame(width: round(5.5 * s), height: round(5.5 * s))
+                        .offset(x: -5, y: 5)
                 }
             }
             .scaleEffect(hovered ? 1.07 : 1.0)
@@ -798,24 +808,24 @@ private struct StageBarView: View {
             Button("三端 1+2：Codex + Antigravity + Claude") { model.applyThreeSplit(.codex, .antigravity, .claude) }
         } label: {
             Image(systemName: "rectangle.split.2x2")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: isVertical ? round(13 * s) : 12, weight: .medium))
                 .foregroundStyle(palette.muted)
-                .frame(width: isVertical ? 46 : 28, height: 28)
-                .background(palette.surface.opacity(0.75), in: RoundedRectangle(cornerRadius: 7.5, style: .continuous))
+                .frame(width: isVertical ? vTileW : 28, height: isVertical ? vBtnH : 28)
+                .background(palette.surface.opacity(0.75), in: RoundedRectangle(cornerRadius: 8.5, style: .continuous))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: isVertical ? 46 : 28)
+        .frame(width: isVertical ? vTileW : 28)
         .help("更多双拼 / 三端联合分屏布局")
     }
 
     private var newWorkflowIconButton: some View {
         Button { model.openCompose(.implementReviewFix) } label: {
             Image(systemName: "plus")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: isVertical ? round(13.5 * s) : 12, weight: .semibold))
                 .foregroundStyle(palette.accentText)
-                .frame(width: isVertical ? 36 : 28, height: 28)
-                .background(palette.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: isVertical ? vBtnW : 28, height: isVertical ? vBtnH : 28)
+                .background(palette.accent, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .help("新建协作 / 启动 Workflow（⌘N）")
@@ -836,14 +846,14 @@ private struct StageBarView: View {
             Button("日间 / 夜间模式与自定义色值…") { model.openSettings() }
         } label: {
             Image(systemName: "paintpalette")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: isVertical ? round(13 * s) : 12, weight: .medium))
                 .foregroundStyle(palette.accent)
-                .frame(width: isVertical ? 36 : 28, height: 28)
-                .background(palette.accentWash.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: isVertical ? vBtnW : 28, height: isVertical ? vBtnH : 28)
+                .background(palette.accentWash.opacity(0.72), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: isVertical ? 36 : 28)
+        .frame(width: isVertical ? vBtnW : 28)
         .help("快速切换配色主题（当前：\(themeStore.preset.label)）")
     }
 
@@ -862,14 +872,14 @@ private struct StageBarView: View {
             }
         } label: {
             Image(systemName: model.stageBarEdge.symbolName)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: isVertical ? round(13 * s) : 12, weight: .medium))
                 .foregroundStyle(palette.muted)
-                .frame(width: isVertical ? 36 : 28, height: 28)
-                .background(palette.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: isVertical ? vBtnW : 28, height: isVertical ? vBtnH : 28)
+                .background(palette.surface.opacity(0.68), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: isVertical ? 36 : 28)
+        .frame(width: isVertical ? vBtnW : 28)
         .help("切换悬浮栏停靠方向（顶部 / 底部 / 左侧 / 右侧，也可直接拖向屏幕边缘磁吸）")
     }
 
@@ -888,9 +898,9 @@ private struct StageBarView: View {
     private var settingsIconButton: some View {
         Button { model.openSettings() } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: isVertical ? round(13 * s) : 12, weight: .medium))
                 .foregroundStyle(palette.muted)
-                .frame(width: isVertical ? 36 : 26, height: 28)
+                .frame(width: isVertical ? vBtnW : 26, height: isVertical ? vBtnH : 28)
         }
         .buttonStyle(.plain)
         .help("工作站设置（⌘,）")
@@ -899,9 +909,9 @@ private struct StageBarView: View {
     private var collapseBarIconButton: some View {
         Button { model.onToggleStageBar?() } label: {
             Image(systemName: collapseChevronName)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: isVertical ? round(11.5 * s) : 11, weight: .semibold))
                 .foregroundStyle(palette.quiet)
-                .frame(width: isVertical ? 36 : 24, height: 24)
+                .frame(width: isVertical ? vBtnW : 24, height: isVertical ? max(24, round(24 * s)) : 24)
         }
         .buttonStyle(.plain)
         .help("收起悬浮切换栏（可从顶部菜单栏图标随时唤回）")
@@ -921,7 +931,7 @@ private struct StageBarView: View {
     }
 
     private var barDividerVertical: some View {
-        Rectangle().fill(palette.line).frame(width: 28, height: 1)
+        Rectangle().fill(palette.line).frame(width: max(30, floor(stage.barMetrics.verticalWidth - 28)), height: 1)
     }
 }
 
@@ -1335,19 +1345,19 @@ private struct BridgeView: View {
 
     private func quickLaunchCard(_ template: WorkflowTemplate) -> some View {
         Button { model.openCompose(template) } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(template.title).workstationFont(12.5, weight: .semibold).foregroundStyle(palette.ink).lineLimit(1)
-                Text(template.subtitle).workstationFont(11).foregroundStyle(palette.muted).lineLimit(3).multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(template.title).workstationFont(13, weight: .semibold).foregroundStyle(palette.ink).lineLimit(1)
+                Text(template.subtitle).workstationFont(11.5).foregroundStyle(palette.muted).lineLimit(3).multilineTextAlignment(.leading)
+                Spacer(minLength: 8)
                 HStack(spacing: 4) {
-                    Text("立即启动").workstationFont(11, weight: .semibold).foregroundStyle(palette.accent)
+                    Text("立即启动").workstationFont(11.5, weight: .semibold).foregroundStyle(palette.accent)
                     Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(palette.accent)
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
-            .background(palette.surface, in: RoundedRectangle(cornerRadius: 11))
-            .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(palette.line) }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 138, maxHeight: 162, alignment: .leading)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(palette.line) }
         }
         .buttonStyle(.plain)
     }
@@ -1698,10 +1708,32 @@ private final class WorkstationCoordinator: NSObject, NSApplicationDelegate, NSW
         model.onRaiseStageBar = { [weak self] in self?.raiseStageBar() }
         model.onStageBarEdgeChanged = { [weak self] edge in self?.animateStageBar(to: edge) }
         model.onUpdateBadge = { [weak self] count in self?.updateStatusItemTitle(count: count) }
+        model.activeScreenProvider = { [weak self] in self?.currentTargetScreen }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
 
         model.start()
         showStageBar()
         showMainWindow()
+    }
+
+    private var currentTargetScreen: NSScreen? {
+        stageBarPanel?.screen ?? mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    @objc private func handleScreenParametersChanged() {
+        let screen = currentTargetScreen
+        model.stageManager.updateMetrics(for: screen)
+        if model.isStageBarVisible {
+            animateStageBar(to: model.stageBarEdge, announce: false)
+        } else {
+            clampMainWindowInsideCanvas(animated: true)
+        }
     }
 
     private func setupMainWindow() {
@@ -1805,7 +1837,8 @@ private final class WorkstationCoordinator: NSObject, NSApplicationDelegate, NSW
 
     func showStageBar() {
         isProgrammaticBarMove = true
-        let targetFrame = model.stageManager.stageBarFrame(edge: model.stageBarEdge)
+        let screen = currentTargetScreen
+        let targetFrame = model.stageManager.stageBarFrame(edge: model.stageBarEdge, on: screen)
         stageBarPanel.setFrame(targetFrame, display: true)
         stageBarPanel.alphaValue = 0
         stageBarPanel.orderFrontRegardless()
@@ -1820,10 +1853,11 @@ private final class WorkstationCoordinator: NSObject, NSApplicationDelegate, NSW
         clampMainWindowInsideCanvas(animated: true)
     }
 
-    func animateStageBar(to edge: StageBarEdge) {
+    func animateStageBar(to edge: StageBarEdge, announce: Bool = true) {
         guard model.isStageBarVisible else { return }
         isProgrammaticBarMove = true
-        let targetFrame = model.stageManager.stageBarFrame(edge: edge)
+        let screen = currentTargetScreen
+        let targetFrame = model.stageManager.stageBarFrame(edge: edge, on: screen)
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.28
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
@@ -1833,7 +1867,9 @@ private final class WorkstationCoordinator: NSObject, NSApplicationDelegate, NSW
         }
         stageBarPanel.orderFrontRegardless()
         clampMainWindowInsideCanvas(animated: true)
-        model.showBanner("悬浮栏已停靠到屏幕\(edge.label)")
+        if announce {
+            model.showBanner("悬浮栏已停靠到屏幕\(edge.label)")
+        }
     }
 
     func raiseStageBar() {
@@ -1880,7 +1916,7 @@ private final class WorkstationCoordinator: NSObject, NSApplicationDelegate, NSW
 
     private func clampMainWindowInsideCanvas(animated: Bool) {
         guard model.isStageBarVisible else { return }
-        let canvas = model.stageManager.stageCanvasFrame(edge: model.stageBarEdge, reserveBar: true)
+        let canvas = model.stageManager.stageCanvasFrame(edge: model.stageBarEdge, on: currentTargetScreen, reserveBar: true)
         var frame = mainWindow.frame
         var changed = false
 
@@ -1924,6 +1960,15 @@ private final class WorkstationCoordinator: NSObject, NSApplicationDelegate, NSW
 
     func toggleMainWindow() {
         if mainWindow.isVisible && model.isMainWindowVisible { hideMainWindow() } else { showMainWindow() }
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow, win == stageBarPanel || win == mainWindow else { return }
+        let targetScreen = win.screen ?? currentTargetScreen
+        model.stageManager.updateMetrics(for: targetScreen)
+        if model.isStageBarVisible, win == mainWindow {
+            animateStageBar(to: model.stageBarEdge, announce: false)
+        }
     }
 
     func windowDidMove(_ notification: Notification) {
