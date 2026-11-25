@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+executable="$root/.build/bridge-cli"
+if [ ! -x "$executable" ]; then
+    printf '请先构建无语工作站：\n  "%s/build"\n' "$root" >&2
+    exit 1
+fi
+if [ "$#" -eq 0 ]; then
+    set -- help
+fi
+exec "$executable" "$@"

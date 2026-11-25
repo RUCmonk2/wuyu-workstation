@@ -1,0 +1,107 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+build_dir="$root/.build"
+user_apps="$HOME/Applications"
+mailbox_dir="$HOME/.wuyu-workstation/mailbox"
+app_name='无语工作站.app'
+installed_app="$user_apps/$app_name"
+cli="$build_dir/bridge-cli"
+lock="$build_dir/.build-lock"
+stage=
+sign_stage=
+
+mkdir -p "$build_dir" "$user_apps" "$mailbox_dir"
+chmod 700 "$mailbox_dir" 2>/dev/null || true
+if ! mkdir "$lock" 2>/dev/null; then
+    printf '无法锁定构建目录。请确认是否已有构建在运行：%s\n' "$lock" >&2
+    exit 1
+fi
+
+cleanup() {
+    if [ -n "$sign_stage" ]; then rm -rf -- "$sign_stage"; fi
+    if [ -n "$stage" ]; then
+        if [ ! -e "$installed_app" ] && [ -d "$stage/previous.app" ]; then
+            mv "$stage/previous.app" "$installed_app" || return 1
+        fi
+        rm -rf -- "$stage"
+    fi
+    rmdir "$lock"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Auto-detect stable local code-signing identity (e.g. WuyuWorkstationDev or Apple Development)
+# so future updates keep macOS Accessibility permission automatically without re-adding.
+SIGN_IDENTITY="${WUYU_SIGN_IDENTITY:-}"
+if [ -z "$SIGN_IDENTITY" ]; then
+    for candidate in "WuyuWorkstationDev" "Apple Development"; do
+        if /usr/bin/security find-identity -v -p codesigning 2>/dev/null | grep -Fq "$candidate"; then
+            SIGN_IDENTITY="$candidate"
+            break
+        fi
+    done
+fi
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="-"
+fi
+
+stage=$(mktemp -d "$build_dir/.stage.XXXXXXXX")
+sign_stage=$(mktemp -d "${TMPDIR:-/tmp}/wuyu-workstation.XXXXXXXX")
+staged_app="$sign_stage/$app_name"
+staged_cli="$sign_stage/bridge-cli"
+iconset="$sign_stage/AppIcon.iconset"
+mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Resources" "$iconset"
+cp -X "$root/Info.plist" "$staged_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :WuyuMailboxPath" "$staged_app/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :WuyuMailboxPath string $mailbox_dir" "$staged_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :WuyuSourceDir" "$staged_app/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :WuyuSourceDir string $root" "$staged_app/Contents/Info.plist"
+/usr/bin/plutil -lint -s "$staged_app/Contents/Info.plist"
+
+for size in 16 32 128 256 512; do
+    retina=$((size * 2))
+    /usr/bin/sips -z "$size" "$size" "$root/AppIcon.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    /usr/bin/sips -z "$retina" "$retina" "$root/AppIcon.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+/usr/bin/iconutil -c icns "$iconset" -o "$staged_app/Contents/Resources/AppIcon.icns"
+
+# 1) Build headless standalone CLI + MCP binary
+/usr/bin/xcrun swiftc -swift-version 6 -O -DBRIDGE_CLI_ONLY \
+    "$root/BridgeStore.swift" \
+    "$root/GitContextHelper.swift" \
+    "$root/MCPServer.swift" \
+    "$root/main.swift" \
+    -o "$staged_cli"
+/usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$staged_cli"
+
+# 2) Build full macOS GUI app bundle
+/usr/bin/xcrun swiftc -swift-version 6 -O \
+    "$root/BridgeStore.swift" \
+    "$root/GitContextHelper.swift" \
+    "$root/MCPServer.swift" \
+    "$root/WorkstationStyle.swift" \
+    "$root/MarkdownView.swift" \
+    "$root/WindowStageManager.swift" \
+    "$root/CodexRunner.swift" \
+    "$root/ComposeView.swift" \
+    "$root/SettingsView.swift" \
+    "$root/BridgeUI.swift" \
+    "$root/main.swift" \
+    -o "$staged_app/Contents/MacOS/Bridge"
+/usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$staged_app"
+/usr/bin/codesign --verify --strict "$staged_app"
+
+mv "$staged_cli" "$stage/bridge-cli"
+mv "$staged_app" "$stage/$app_name"
+
+if [ -e "$installed_app" ]; then
+    mv "$installed_app" "$stage/previous.app"
+fi
+mv "$stage/$app_name" "$installed_app"
+mv -f "$stage/bridge-cli" "$cli"
+
+printf 'Built & installed (%s): %s\n' "$SIGN_IDENTITY" "$installed_app"
