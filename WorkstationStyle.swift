@@ -25,7 +25,7 @@ enum WorkstationAppearance: String, CaseIterable, Identifiable {
     }
 
     static func saved(in defaults: UserDefaults) -> Self {
-        defaults.string(forKey: preferenceKey).flatMap(Self.init(rawValue:)) ?? .dark
+        defaults.string(forKey: preferenceKey).flatMap(Self.init(rawValue:)) ?? .light
     }
 }
 
@@ -51,6 +51,7 @@ struct ThemeTriplet: Equatable, Sendable {
 enum WorkstationThemePreset: String, CaseIterable, Identifiable, Sendable {
     static let preferenceKey = "workstation.themePreset"
 
+    case inkLandscape = "ink_landscape"
     case `default` = "default"
     case gruvboxMaterial = "gruvbox_material"
     case catppuccin = "catppuccin"
@@ -67,6 +68,7 @@ enum WorkstationThemePreset: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
+        case .inkLandscape: "山水"
         case .default: "Default"
         case .gruvboxMaterial: "Gruvbox Material"
         case .catppuccin: "Catppuccin"
@@ -84,6 +86,8 @@ enum WorkstationThemePreset: String, CaseIterable, Identifiable, Sendable {
     func triplet(dark: Bool) -> ThemeTriplet {
         if dark {
             switch self {
+            case .inkLandscape:
+                ThemeTriplet(background: 0x192522, foreground: 0xE6E8DB, accent: 0xA3C4B0)
             case .default:
                 ThemeTriplet(background: 0x13141A, foreground: 0xF0F1F7, accent: 0x8E9BFF)
             case .gruvboxMaterial:
@@ -109,6 +113,8 @@ enum WorkstationThemePreset: String, CaseIterable, Identifiable, Sendable {
             }
         } else {
             switch self {
+            case .inkLandscape:
+                ThemeTriplet(background: 0xF6F4EE, foreground: 0x293C37, accent: 0x4D7166)
             case .default:
                 ThemeTriplet(background: 0xF8F8FB, foreground: 0x1E1F2A, accent: 0x5654D1)
             case .gruvboxMaterial:
@@ -246,7 +252,7 @@ final class WorkstationThemeStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.appearance = WorkstationAppearance.saved(in: defaults)
         let savedPreset = defaults.string(forKey: WorkstationThemePreset.preferenceKey)
-            .flatMap(WorkstationThemePreset.init(rawValue:)) ?? .gruvboxMaterial
+            .flatMap(WorkstationThemePreset.init(rawValue:)) ?? .inkLandscape
         self.preset = savedPreset
         self.contrast = defaults.string(forKey: WorkstationContrast.preferenceKey)
             .flatMap(WorkstationContrast.init(rawValue:)) ?? .standard
@@ -292,7 +298,8 @@ final class WorkstationThemeStore: ObservableObject {
             fg: resolved.fg,
             accent: resolved.accent,
             dark: resolved.isDark,
-            highContrast: contrast == .high
+            highContrast: contrast == .high,
+            isInkLandscape: preset == .inkLandscape
         )
     }
 }
@@ -328,15 +335,48 @@ extension View {
     func workstationFont(_ size: CGFloat, weight: Font.Weight = .regular) -> some View {
         modifier(WorkstationFont(size: size, weight: weight))
     }
+
+    func workstationTitle(_ size: CGFloat) -> some View {
+        modifier(WorkstationFont(size: size, weight: .semibold, title: true))
+    }
 }
 
 private struct WorkstationFont: ViewModifier {
     let size: CGFloat
     let weight: Font.Weight
+    var title = false
     @Environment(\.workstationTextScale) private var scale
+    @Environment(\.workstationPalette) private var palette
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size * scale, weight: weight))
+        let pointSize = size * scale
+        let font: Font = title && palette.isInkLandscape
+            ? .custom("STSongti-SC-Regular", fixedSize: pointSize)
+            : .system(size: pointSize, weight: weight)
+        content.font(font)
+    }
+}
+
+struct WorkstationMark: View {
+    let size: CGFloat
+    @Environment(\.workstationPalette) private var palette
+
+    var body: some View {
+        Group {
+            if palette.isInkLandscape {
+                Text("无")
+                    .font(.custom("STSongti-SC-Bold", fixedSize: size * 0.65))
+                    .foregroundStyle(palette.seal)
+                    .frame(width: size, height: size)
+                    .overlay { RoundedRectangle(cornerRadius: 2).strokeBorder(palette.seal) }
+            } else {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -424,13 +464,15 @@ struct WorkstationPalette: Sendable {
     private let acc: RGBColor
     private let dark: Bool
     private let highContrast: Bool
+    let isInkLandscape: Bool
 
-    init(bg: RGBColor, fg: RGBColor, accent: RGBColor, dark: Bool, highContrast: Bool = false) {
+    init(bg: RGBColor, fg: RGBColor, accent: RGBColor, dark: Bool, highContrast: Bool = false, isInkLandscape: Bool = false) {
         self.bg = bg
         self.fg = fg
         self.acc = accent
         self.dark = dark
         self.highContrast = highContrast
+        self.isInkLandscape = isInkLandscape
     }
 
     private var liftTarget: RGBColor { dark ? RGBColor(hex: 0xFFFFFF) : RGBColor(hex: 0x000000) }
@@ -438,6 +480,9 @@ struct WorkstationPalette: Sendable {
     private var black: RGBColor { RGBColor(hex: 0x111214) }
 
     var canvas: Color { bg.color }
+    var showsLandscape: Bool { isInkLandscape && !highContrast }
+    var cornerRadius: CGFloat { isInkLandscape ? 4 : 8 }
+    var seal: Color { tone(0xA44936, 0xE89A86) }
     var sidebar: Color {
         dark ? bg.blended(with: liftTarget, amount: highContrast ? 0.045 : 0.032).color
              : bg.blended(with: fg, amount: 0.042).color
@@ -455,7 +500,7 @@ struct WorkstationPalette: Sendable {
              : bg.blended(with: white, amount: 0.55).color
     }
     var line: Color {
-        let amt = highContrast ? (dark ? 0.22 : 0.22) : (dark ? 0.13 : 0.13)
+        let amt = highContrast ? 0.22 : 0.13
         return bg.blended(with: fg, amount: amt).color
     }
     var selected: Color {
@@ -487,30 +532,32 @@ struct WorkstationPalette: Sendable {
     var danger: Color { tone(0xB82E4C, 0xEA7A89) }
 
     func clientColor(_ client: Client?) -> Color {
-        switch client {
-        case .codex: tone(0x4F5AE6, 0x8BA0FF)
-        case .antigravity: tone(0x7647D4, 0xC29CFF)
-        case .gemini: tone(0x1E7AE6, 0x6DB8FF)
-        case .claude: tone(0xD65D3B, 0xEF8D6B)
-        case nil: accent
-        }
+        guard let client else { return accent }
+        return clientTint(client).color
     }
 
     func clientWash(_ client: Client?) -> Color {
+        guard let client else { return accentWash }
+        return bg.blended(with: clientTint(client), amount: dark ? 0.20 : 0.13).color
+    }
+
+    private func clientTint(_ client: Client) -> RGBColor {
+        let lightColor: UInt32
+        let darkColor: UInt32
         switch client {
-        case .codex: bg.blended(with: RGBColor(hex: dark ? 0x8BA0FF : 0x4F5AE6), amount: dark ? 0.20 : 0.13).color
-        case .antigravity: bg.blended(with: RGBColor(hex: dark ? 0xC29CFF : 0x7647D4), amount: dark ? 0.20 : 0.13).color
-        case .gemini: bg.blended(with: RGBColor(hex: dark ? 0x6DB8FF : 0x1E7AE6), amount: dark ? 0.20 : 0.13).color
-        case .claude: bg.blended(with: RGBColor(hex: dark ? 0xEF8D6B : 0xD65D3B), amount: dark ? 0.20 : 0.13).color
-        case nil: accentWash
+        case .codex: (lightColor, darkColor) = isInkLandscape ? (0x3B6456, 0xA3C4B0) : (0x4F5AE6, 0x8BA0FF)
+        case .antigravity: (lightColor, darkColor) = isInkLandscape ? (0x675576, 0xC1A7CF) : (0x7647D4, 0xC29CFF)
+        case .gemini: (lightColor, darkColor) = isInkLandscape ? (0x3F6479, 0x9FBECF) : (0x1E7AE6, 0x6DB8FF)
+        case .claude: (lightColor, darkColor) = isInkLandscape ? (0x93523C, 0xD7A38A) : (0xD65D3B, 0xEF8D6B)
         }
+        return RGBColor(hex: dark ? darkColor : lightColor)
     }
 
     func statusColor(_ status: PacketStatus) -> Color {
         switch status {
         case .open: accent
         case .inProgress: warning
-        case .replied: tone(0x1E7AE6, 0x6DB8FF)
+        case .replied: clientColor(.gemini)
         case .done: success
         case .archived: quiet
         }
@@ -522,12 +569,16 @@ struct WorkstationPalette: Sendable {
 }
 
 private struct WorkstationPaletteKey: EnvironmentKey {
-    static let defaultValue = WorkstationPalette(
-        bg: RGBColor(hex: 0x141617),
-        fg: RGBColor(hex: 0xD4BE98),
-        accent: RGBColor(hex: 0xE78A4E),
-        dark: true
-    )
+    static let defaultValue: WorkstationPalette = {
+        let theme = WorkstationThemePreset.inkLandscape.triplet(dark: false)
+        return WorkstationPalette(
+            bg: RGBColor(hex: theme.background),
+            fg: RGBColor(hex: theme.foreground),
+            accent: RGBColor(hex: theme.accent),
+            dark: false,
+            isInkLandscape: true
+        )
+    }()
 }
 
 extension EnvironmentValues {
@@ -604,9 +655,9 @@ struct WorkstationButtonStyle: ButtonStyle {
                 .foregroundStyle(foreground)
                 .padding(.horizontal, compact ? 9 : 11)
                 .frame(minHeight: compact ? 27 : 31)
-                .background(fill, in: RoundedRectangle(cornerRadius: 8))
+                .background(fill, in: RoundedRectangle(cornerRadius: palette.cornerRadius))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: palette.cornerRadius)
                         .strokeBorder(role == .secondary ? palette.line : .clear)
                         .allowsHitTesting(false)
                 }

@@ -56,6 +56,7 @@ staged_cli="$sign_stage/bridge-cli"
 iconset="$sign_stage/AppIcon.iconset"
 mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Resources" "$iconset"
 cp -X "$root/Info.plist" "$staged_app/Contents/Info.plist"
+cp -X "$root/Resources/mountains.webp" "$staged_app/Contents/Resources/mountains.webp"
 /usr/libexec/PlistBuddy -c "Delete :WuyuMailboxPath" "$staged_app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :WuyuMailboxPath string $mailbox_dir" "$staged_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :WuyuSourceDir" "$staged_app/Contents/Info.plist" 2>/dev/null || true

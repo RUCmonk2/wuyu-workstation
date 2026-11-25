@@ -85,7 +85,7 @@ struct SettingsView: View {
                 .background(palette.accentWash, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
                 Text("工作站设置")
-                    .font(.system(size: 17, weight: .semibold))
+                    .workstationTitle(21)
                 Text("多套配色主题、自定义色值、窗口分屏权限与客户端绑定")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.muted)

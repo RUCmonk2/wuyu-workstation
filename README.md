@@ -10,7 +10,7 @@
 - **零传声筒全自动协同 + 内置 `CodexRunner`**：
   - 配合 Antigravity `/wuyu-flow` 技能与官方 `codex mcp-server` 实现多轮自主交互并实时直播上屏；
   - 工作站内直接调用本地 `codex exec --json`（支持 `read-only` / `workspace-write` 沙箱、推理强度与系统/自定义代理配置），流式显示进度并自动落盘回执。
-- **11 套多主题配色引擎**：内置 `Default`、`Gruvbox Material`、`Catppuccin`、`Dracula`、`Everforest`、`Monokai`、`Nord`、`One Dark Pro`、`Tokyo Night`、`Solarized`、`Vesper` 深浅双模式，支持对比度切换及自定义 **Background / Foreground / Accent** 色值与取色器。
+- **多主题配色引擎**：默认使用「山水」日间主题，保留原有 11 套配色、日夜外观、对比度切换及自定义色值。「山水」主题的纸色、墨绿与山景来自 [叶耀之的个人主页](https://yeyaozhi.eu.cc/)。
 - **桌面工作台 V2**：可拖拽侧边栏、85%–91% 自适应流式画幅、Markdown 代码块渲染与一键复制、目录实时监听（`DispatchSource`）、Git Diff 上下文自动抓取与剪贴板一键存回执。
 
 ## 构建与运行

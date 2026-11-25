@@ -415,12 +415,12 @@ private struct StageBarView: View {
         .background {
             ZStack {
                 VisualEffectGlass(material: .hudWindow, blendingMode: .behindWindow)
-                palette.sidebar.opacity(0.66)
+                palette.sidebar.opacity(palette.isInkLandscape ? 0.94 : 0.66)
             }
-            .clipShape(RoundedRectangle(cornerRadius: isVertical ? 16 : 13, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: dockRadius, style: .continuous))
         }
         .overlay {
-            RoundedRectangle(cornerRadius: isVertical ? 16 : 13, style: .continuous)
+            RoundedRectangle(cornerRadius: dockRadius, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
                         colors: [
@@ -442,18 +442,19 @@ private struct StageBarView: View {
         .environment(\.workstationTextScale, 1)
     }
 
+    private var dockRadius: CGFloat {
+        palette.isInkLandscape ? 6 : (isVertical ? 16 : 13)
+    }
+
     // MARK: Horizontal Dock Bar (Top / Bottom)
 
     private var horizontalBar: some View {
         HStack(spacing: 8) {
             Button { model.onToggleMainWindow?() } label: {
                 HStack(spacing: 6) {
-                    Image(nsImage: NSApplication.shared.applicationIconImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 22, height: 22)
+                    WorkstationMark(size: 19)
                     Text("无语")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .workstationTitle(13)
                         .foregroundStyle(palette.ink)
                 }
                 .padding(.horizontal, 8)
@@ -575,10 +576,7 @@ private struct StageBarView: View {
     private var verticalRail: some View {
         VStack(spacing: max(6, round(8 * s))) {
             Button { model.onToggleMainWindow?() } label: {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: round(34 * s), height: round(34 * s))
+                WorkstationMark(size: round(30 * s))
                     .padding(5)
                     .background(
                         model.isMainWindowVisible ? palette.accentWash : .clear,
@@ -587,6 +585,7 @@ private struct StageBarView: View {
                     .scaleEffect(hoveredUtility == "brand" ? 1.07 : 1.0)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("展开或收起工作台")
             .onHover { h in withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) { hoveredUtility = h ? "brand" : nil } }
             .help("展开 / 收起无语工作台面板（⌘\\）")
 
@@ -984,6 +983,9 @@ private struct ChipFlowLayout: Layout {
 // MARK: - Main V2.1 Workstation View
 
 private struct BridgeView: View {
+    private static let landscape = Bundle.main.url(forResource: "mountains", withExtension: "webp")
+        .flatMap { NSImage(contentsOf: $0) }
+
     @ObservedObject var model: WorkstationModel
     @ObservedObject var stage: WindowStageManager
     @ObservedObject var themeStore: WorkstationThemeStore
@@ -1058,27 +1060,20 @@ private struct BridgeView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("无语工作站")
-                        .workstationFont(14, weight: .semibold)
-                        .foregroundStyle(palette.ink)
-                    Text("MCP 共享黑板 · \(themeStore.preset.label)")
-                        .workstationFont(10)
-                        .foregroundStyle(palette.quiet)
-                }
+            HStack(spacing: 11) {
+                WorkstationMark(size: 26)
+                Text("无语工作站")
+                    .workstationTitle(21)
+                    .foregroundStyle(palette.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 30)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 17)
+            .padding(.top, 38)
+            .padding(.bottom, 17)
 
             Button { model.openCompose(.implementReviewFix) } label: {
-                Label("新建协作 / Workflow", systemImage: "bolt.horizontal.circle")
+                Label("新建协作", systemImage: "plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(WorkstationButtonStyle(.primary))
@@ -1101,8 +1096,8 @@ private struct BridgeView: View {
             }
             .padding(.horizontal, 9)
             .frame(height: 30)
-            .background(palette.field, in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(palette.line) }
+            .background(palette.field, in: RoundedRectangle(cornerRadius: palette.cornerRadius))
+            .overlay { RoundedRectangle(cornerRadius: palette.cornerRadius).strokeBorder(palette.line) }
             .padding(.horizontal, 13)
             .padding(.bottom, 10)
 
@@ -1147,7 +1142,7 @@ private struct BridgeView: View {
             Rectangle().fill(palette.line).frame(height: 1)
             HStack(spacing: 4) {
                 Button { model.onToggleStageBar?() } label: {
-                    Label(model.isStageBarVisible ? "隐藏顶栏" : "显示顶栏", systemImage: "menubar.rectangle")
+                    Label(model.isStageBarVisible ? "隐藏悬浮栏" : "显示悬浮栏", systemImage: "menubar.rectangle")
                 }
                 .buttonStyle(WorkstationButtonStyle(.quiet, compact: true))
                 Spacer()
@@ -1227,7 +1222,7 @@ private struct BridgeView: View {
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 8)
-        .background(selected ? palette.selected : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(selected ? palette.selected : .clear, in: RoundedRectangle(cornerRadius: palette.cornerRadius))
         .contentShape(Rectangle())
     }
 
@@ -1237,8 +1232,9 @@ private struct BridgeView: View {
                 ClientGlyph(client: model.clientFilter, size: 15)
                     .foregroundStyle(palette.clientColor(model.clientFilter))
                 Text(model.clientFilter?.label ?? "全部协作线程")
-                    .workstationFont(13, weight: .semibold)
+                    .workstationTitle(15)
                     .foregroundStyle(palette.ink)
+                    .lineLimit(1)
 
                 Spacer()
 
@@ -1266,14 +1262,18 @@ private struct BridgeView: View {
             if !stage.isAccessibilityTrusted && !dismissAccessibilityBanner {
                 HStack(spacing: 10) {
                     Image(systemName: "rectangle.split.2x1.fill").foregroundStyle(palette.warning)
-                    Text("若「设备控制和数据访问」里已有旧条目，请先点「−」删除，再把 ~/Applications/无语工作站.app 拖入列表即可启用一键分屏。")
+                    Text("允许辅助功能访问后，即可使用一键分屏。")
                         .workstationFont(11.5)
                         .foregroundStyle(palette.ink)
                     Spacer()
-                    Button("Finder 定位应用") {
+                    Button {
                         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+                    } label: {
+                        Image(systemName: "folder")
                     }
                     .buttonStyle(WorkstationButtonStyle(.secondary, compact: true))
+                    .help("在 Finder 中显示应用")
+                    .accessibilityLabel("在 Finder 中显示应用")
                     Button("打开系统设置") { stage.requestAccessibilityPermission() }
                         .buttonStyle(WorkstationButtonStyle(.primary, compact: true))
                     Button { dismissAccessibilityBanner = true } label: {
@@ -1315,49 +1315,101 @@ private struct BridgeView: View {
         let scale = WorkstationTextSize.scale(for: themeStore.fontPercent)
         // Always fill ~85% of the workspace canvas; gently expand up to ~91% as font scale grows
         let ratio = min(0.91, max(0.84, 0.85 + max(0, scale - 1.0) * 0.17))
-        let maxAllowed = max(480, availableWidth - 32)
+        let maxAllowed = max(0, availableWidth - 32)
         return min(maxAllowed, max(540, floor(availableWidth * ratio)))
     }
 
     private var emptyState: some View {
         GeometryReader { proxy in
             let targetWidth = fluidContentWidth(for: proxy.size.width)
-            VStack(spacing: 14) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable().scaledToFit().frame(width: 76, height: 76)
-                Text("开始一次多模型协同 Workflow")
-                    .workstationFont(22, weight: .semibold).foregroundStyle(palette.ink)
-                Text("Codex 主力实现 · Antigravity（Gemini 4 + 内置 Claude）审查与编排 · Gemini Ultra 多模态初读")
-                    .workstationFont(12.5).foregroundStyle(palette.muted).multilineTextAlignment(.center)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("开始协作")
+                            .workstationTitle(38)
+                            .tracking(palette.isInkLandscape ? 3 : 0)
+                            .foregroundStyle(palette.ink)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("选择模板，创建第一条交接。")
+                            .workstationFont(13)
+                            .foregroundStyle(palette.muted)
+                    }
+                    .padding(.leading, 10)
+                    .frame(maxWidth: .infinity, minHeight: 198, alignment: .leading)
+                    .background { landscapeBackdrop }
 
-                HStack(spacing: 12) {
-                    quickLaunchCard(.implementReviewFix)
-                    quickLaunchCard(.codeDiffReview)
-                    quickLaunchCard(.multimodalToCode)
+                    Rectangle().fill(palette.line).frame(height: 1)
+
+                    let layout = targetWidth >= 540
+                        ? AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+                        : AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+                    layout {
+                        quickLaunchCard(.implementReviewFix)
+                        quickLaunchCard(.codeDiffReview)
+                        quickLaunchCard(.multimodalToCode)
+                    }
                 }
-                .padding(.top, 6)
                 .frame(width: targetWidth)
+                .padding(.vertical, 18)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var landscapeBackdrop: some View {
+        if palette.showsLandscape, let landscape = Self.landscape {
+            GeometryReader { proxy in
+                Image(nsImage: landscape)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .saturation(0.42)
+                    .opacity(0.68)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .clear, location: 0.22),
+                            .init(color: .black, location: 0.78),
+                        ], startPoint: .leading, endPoint: .trailing)
+                    }
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.24),
+                            .init(color: .black, location: 0.75),
+                            .init(color: .clear, location: 1),
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
+            }
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
         }
     }
 
     private func quickLaunchCard(_ template: WorkflowTemplate) -> some View {
         Button { model.openCompose(template) } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(template.title).workstationFont(13, weight: .semibold).foregroundStyle(palette.ink).lineLimit(1)
-                Text(template.subtitle).workstationFont(11.5).foregroundStyle(palette.muted).lineLimit(3).multilineTextAlignment(.leading)
-                Spacer(minLength: 8)
-                HStack(spacing: 4) {
-                    Text("立即启动").workstationFont(11.5, weight: .semibold).foregroundStyle(palette.accent)
-                    Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(palette.accent)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(template.title)
+                        .workstationTitle(16)
+                        .foregroundStyle(palette.ink)
+                    Spacer(minLength: 5)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(palette.accent)
+                        .accessibilityHidden(true)
                 }
+                Text(template.subtitle)
+                    .workstationFont(11.5)
+                    .foregroundStyle(palette.muted)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 138, maxHeight: 162, alignment: .leading)
-            .background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
-            .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(palette.line) }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: palette.cornerRadius))
+            .overlay { RoundedRectangle(cornerRadius: palette.cornerRadius).strokeBorder(palette.line) }
         }
         .buttonStyle(.plain)
     }
@@ -1504,7 +1556,7 @@ private struct BridgeView: View {
                     .help("删除整个协作线程")
             }
 
-            Text(thread.subject).workstationFont(21, weight: .semibold).foregroundStyle(palette.ink).textSelection(.enabled)
+            Text(thread.subject).workstationTitle(26).foregroundStyle(palette.ink).textSelection(.enabled)
         }
     }
 

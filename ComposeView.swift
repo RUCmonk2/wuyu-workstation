@@ -140,7 +140,7 @@ struct ComposeView: View {
                 .frame(width: 34, height: 34)
                 .background(colors.accentWash, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).workstationFont(17, weight: .semibold)
+                Text(title).workstationTitle(21)
                 Text(replyThread == nil ? "支持多阶段流水线、项目目录引用与一键抓取 Git Diff" : "提交回执后将自动推进工作流阶段")
                     .workstationFont(11)
                     .foregroundStyle(colors.muted)
